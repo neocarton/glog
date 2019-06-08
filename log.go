@@ -42,7 +42,7 @@ type (
 )
 
 var (
-	config *Config
+	config = &Config{Level: DefaultLogLevel}
 )
 
 // Initialize logger
