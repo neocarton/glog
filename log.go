@@ -80,17 +80,17 @@ func GetLoggerByPackage(pkg interface{}) *Logger {
 
 // Warnf log error
 func (logger *Logger) Warnf(format string, err error, args ...interface{}) {
-	logger.LogWithErrorf(logrus.WarnLevel, format, err, args)
+	logger.LogWithErrorf(logrus.WarnLevel, format, err, args...)
 }
 
 // Errorf log error
 func (logger *Logger) Errorf(format string, err error, args ...interface{}) {
-	logger.LogWithErrorf(logrus.ErrorLevel, format, err, args)
+	logger.LogWithErrorf(logrus.ErrorLevel, format, err, args...)
 }
 
 // Fatalf log error
 func (logger *Logger) Fatalf(format string, err error, args ...interface{}) {
-	logger.LogWithErrorf(logrus.FatalLevel, format, err, args)
+	logger.LogWithErrorf(logrus.FatalLevel, format, err, args...)
 }
 
 // LogWithErrorf log with error
