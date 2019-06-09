@@ -78,27 +78,6 @@ func GetLoggerByPackage(pkg interface{}) *Logger {
 	return getLogger(module, cfg.Level)
 }
 
-// TraceWithErrorf log error
-func (logger *Logger) TraceWithErrorf(format string, err error, args ...interface{}) {
-	// TODO print log trace
-	format += ": %+v"
-	logger.Entry.Tracef(format, args, err)
-}
-
-// DebugWithErrorf log error
-func (logger *Logger) DebugWithErrorf(format string, err error, args ...interface{}) {
-	// TODO print log trace
-	format += ": %+v"
-	logger.Entry.Debugf(format, args, err)
-}
-
-// InfoWithErrorf log error
-func (logger *Logger) InfoWithErrorf(format string, err error, args ...interface{}) {
-	// TODO print log trace
-	format += ": %+v"
-	logger.Entry.Infof(format, args, err)
-}
-
 // Warnf log error
 func (logger *Logger) Warnf(format string, err error, args ...interface{}) {
 	// TODO print log trace
