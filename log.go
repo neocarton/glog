@@ -1,9 +1,11 @@
 package glog
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -29,10 +31,19 @@ const (
 )
 
 type (
-	// Config structure
-	Config struct {
-		Package string
-		Level   string `json:"level"`
+	StringGetter func() string
+
+	// Config interface
+	Config interface {
+		Package() string
+		Level() string
+	}
+
+	// DefaultConfig default config
+	DefaultConfig struct {
+		Config
+		pkgName string
+		level   string
 	}
 
 	// Logger logger
@@ -42,14 +53,52 @@ type (
 )
 
 var (
-	config = &Config{Level: DefaultLogLevel}
+	config Config = &DefaultConfig{level: DefaultLogLevel}
 )
 
 // Initialize logger
-func Initialize(cfg *Config) {
+func Initialize(cfg Config) {
 	config = cfg
-	level := getLogLevel(config.Level)
+	level := getLogLevel(config.Level())
 	logrus.SetLevel(level)
+}
+
+// AsJSON Convert object to JSON when needed
+func AsJSON(object interface{}) StringGetter {
+	return func() string {
+		if object == nil {
+			return ""
+		}
+		data, _ := json.MarshalIndent(object, "", "  ")
+		return string(data)
+	}
+}
+
+// AsISOTime Convert object to JSON when needed
+func AsISOTime(t time.Time) StringGetter {
+	return func() string {
+		return t.Format(time.RFC3339)
+	}
+}
+
+// Package return package name
+func (cfg *DefaultConfig) Package() string {
+	return cfg.pkgName
+}
+
+// SetPackage set package name
+func (cfg *DefaultConfig) SetPackage(pkgName string) {
+	cfg.pkgName = pkgName
+}
+
+// Level return log level
+func (cfg *DefaultConfig) Level() string {
+	return cfg.pkgName
+}
+
+// SetLevel return log level
+func (cfg *DefaultConfig) SetLevel(level string) {
+	cfg.level = level
 }
 
 // GetRoot get logger
@@ -62,7 +111,7 @@ func GetLogger(module string) *Logger {
 	cfg := getConfig(module)
 	level := DefaultLogLevel
 	if cfg != nil {
-		level = cfg.Level
+		level = cfg.Level()
 	}
 	logger := getLogger(module, level)
 	if cfg == nil { // If module is not configured, disable logger
@@ -75,39 +124,87 @@ func GetLogger(module string) *Logger {
 func GetLoggerByPackage(pkg interface{}) *Logger {
 	module := getSimplePackageName(pkg)
 	cfg := getConfig(module)
-	return getLogger(module, cfg.Level)
+	return getLogger(module, cfg.Level())
 }
 
-// Warnf log error
+// IsLevel log
+func (logger *Logger) IsLevel(level string) bool {
+	return logger.Level == getLogLevel(level)
+}
+
+// Tracef log
+func (logger *Logger) Tracef(format string, args ...interface{}) {
+	logger.Logf(logrus.TraceLevel, format, args...)
+}
+
+// Debugf log
+func (logger *Logger) Debugf(format string, args ...interface{}) {
+	logger.Logf(logrus.DebugLevel, format, args...)
+}
+
+// DebugWithErrorf log
+func (logger *Logger) DebugWithErrorf(format string, err error, args ...interface{}) {
+	logger.LogWithErrorf(logrus.DebugLevel, format, err, args...)
+}
+
+// Infof log
+func (logger *Logger) Infof(format string, args ...interface{}) {
+	logger.Logf(logrus.InfoLevel, format, args...)
+}
+
+// Warnf log
 func (logger *Logger) Warnf(format string, err error, args ...interface{}) {
 	logger.LogWithErrorf(logrus.WarnLevel, format, err, args...)
 }
 
-// Errorf log error
+// Errorf log
 func (logger *Logger) Errorf(format string, err error, args ...interface{}) {
 	logger.LogWithErrorf(logrus.ErrorLevel, format, err, args...)
 }
 
-// Fatalf log error
+// Fatalf log
 func (logger *Logger) Fatalf(format string, err error, args ...interface{}) {
 	logger.LogWithErrorf(logrus.FatalLevel, format, err, args...)
+	logger.Logger.Exit(1)
 }
 
 // LogWithErrorf log with error
 func (logger *Logger) LogWithErrorf(level logrus.Level, format string, err error, args ...interface{}) {
-	// TODO print log trace
-	format += ": %+v"
-	if len(args) > 0 {
-		logger.Entry.Logf(level, format, args, err)
-	} else {
-		logger.Entry.Logf(level, format, err)
+	if args == nil {
+		args = make([]interface{}, 0)
 	}
+	if err != nil {
+		format += ": %s" // TODO print log trace
+		args = append(args, AsJSON(err))
+	}
+	logger.Logf(level, format, args...)
+}
+
+// Logf log
+func (logger *Logger) Logf(level logrus.Level, format string, args ...interface{}) {
+	if len(args) > 0 {
+		args = logger.refineArgs(level, args...)
+		logger.Entry.Logf(level, format, args...)
+	} else {
+		logger.Entry.Logf(level, format, args...)
+	}
+}
+
+func (logger *Logger) refineArgs(level logrus.Level, args ...interface{}) []interface{} {
+	for i, arg := range args {
+		switch function := arg.(type) {
+		case StringGetter: // TODO Support more getter
+			args[i] = function()
+		}
+	}
+	return args
 }
 
 func getSimplePackageName(pkg interface{}) string {
 	pkgName := reflect.TypeOf(pkg).PkgPath()
-	if len(config.Package) > 0 && strings.HasPrefix(pkgName, config.Package) {
-		pkgName = pkgName[len(config.Package):]
+	pkgPrefix := config.Package()
+	if len(pkgPrefix) > 0 && strings.HasPrefix(pkgName, pkgPrefix) {
+		pkgName = pkgName[len(pkgPrefix):]
 	}
 	return pkgName
 }
@@ -134,6 +231,6 @@ func getLogLevel(levelValue string) logrus.Level {
 	return level
 }
 
-func getConfig(module string) *Config {
+func getConfig(module string) Config {
 	return config // TODO return log config by module name, fallback to default
 }
