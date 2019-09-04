@@ -1,10 +1,8 @@
 package glog
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -31,19 +29,19 @@ const (
 )
 
 type (
-	StringGetter func() string
+	Formatter func(input interface{}, format string) string
 
 	// Config interface
 	Config interface {
-		Package() string
 		Level() string
+		Formatters() map[reflect.Type]Formatter
 	}
 
 	// DefaultConfig default config
 	DefaultConfig struct {
 		Config
-		pkgName string
-		level   string
+		level        string
+		formatterMap map[reflect.Type]Formatter
 	}
 
 	// Logger logger
@@ -53,7 +51,15 @@ type (
 )
 
 var (
-	config Config = &DefaultConfig{level: DefaultLogLevel}
+	defaultFormatterMap = map[reflect.Type]Formatter{
+		reflect.TypeOf(time.Time{}):    ToISOTime,
+		reflect.TypeOf(reflect.Struct): ToISOTime,
+	}
+
+	config Config = &DefaultConfig{
+		level:        DefaultLogLevel,
+		formatterMap: defaultFormatterMap,
+	}
 )
 
 // Initialize logger
@@ -63,42 +69,27 @@ func Initialize(cfg Config) {
 	logrus.SetLevel(level)
 }
 
-// AsJSON Convert object to JSON when needed
-func AsJSON(object interface{}) StringGetter {
-	return func() string {
-		if object == nil {
-			return ""
-		}
-		data, _ := json.MarshalIndent(object, "", "  ")
-		return string(data)
-	}
-}
-
-// AsISOTime Convert object to JSON when needed
-func AsISOTime(t time.Time) StringGetter {
-	return func() string {
-		return t.Format(time.RFC3339)
-	}
-}
-
-// Package return package name
-func (cfg *DefaultConfig) Package() string {
-	return cfg.pkgName
-}
-
-// SetPackage set package name
-func (cfg *DefaultConfig) SetPackage(pkgName string) {
-	cfg.pkgName = pkgName
-}
-
 // Level return log level
 func (cfg *DefaultConfig) Level() string {
-	return cfg.pkgName
+	return cfg.level
 }
 
-// SetLevel return log level
+// SetLevel set log level
 func (cfg *DefaultConfig) SetLevel(level string) {
 	cfg.level = level
+}
+
+// Formatters return formaters
+func (cfg *DefaultConfig) Formatters() map[reflect.Type]Formatter {
+	return cfg.formatterMap
+}
+
+// SetFormatter set formatter
+func (cfg *DefaultConfig) SetFormatter(t reflect.Type, formatter Formatter) {
+	if cfg.formatterMap == nil {
+		panic("Formatters was not initialized")
+	}
+	cfg.formatterMap[t] = formatter
 }
 
 // GetRoot get logger
@@ -174,8 +165,8 @@ func (logger *Logger) LogWithErrorf(level logrus.Level, format string, err error
 		args = make([]interface{}, 0)
 	}
 	if err != nil {
-		format += ": %s" // TODO print log trace
-		args = append(args, AsJSON(err))
+		format += "\nError: %s"
+		args = append(args, AsErrStrackTrace(err))
 	}
 	logger.Logf(level, format, args...)
 }
@@ -193,7 +184,7 @@ func (logger *Logger) Logf(level logrus.Level, format string, args ...interface{
 func (logger *Logger) refineArgs(level logrus.Level, args ...interface{}) []interface{} {
 	for i, arg := range args {
 		switch function := arg.(type) {
-		case StringGetter: // TODO Support more getter
+		case StringGetter:
 			args[i] = function()
 		}
 	}
@@ -201,12 +192,7 @@ func (logger *Logger) refineArgs(level logrus.Level, args ...interface{}) []inte
 }
 
 func getSimplePackageName(pkg interface{}) string {
-	pkgName := reflect.TypeOf(pkg).PkgPath()
-	pkgPrefix := config.Package()
-	if len(pkgPrefix) > 0 && strings.HasPrefix(pkgName, pkgPrefix) {
-		pkgName = pkgName[len(pkgPrefix):]
-	}
-	return pkgName
+	return reflect.TypeOf(pkg).PkgPath()
 }
 
 func getLogger(module string, levelValue string) *Logger {
